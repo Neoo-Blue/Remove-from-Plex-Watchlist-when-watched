@@ -1,0 +1,149 @@
+version: '3.8'
+
+services:
+  plex-watchlist-cleanup:
+    build: .
+    container_name: plex-watchlist-cleanup
+    restart: unless-stopped
+    
+    environment:
+      # ============================================
+      # REQUIRED: Plex Server Configuration
+      # ============================================
+      
+      # Your Plex server URL
+      # Example: http://192.168.1.100:32400
+      # Or: http://plex.example.com:32400
+      PLEX_URL: "http://plex:32400"
+      
+      # Your Plex API token (required)
+      # Find it: https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/
+      PLEX_API_KEY: "your-plex-api-key-here"
+      
+      # ============================================
+      # Library Configuration
+      # ============================================
+      
+      # Your movie library name (comma-separated if multiple)
+      # Example: "Movies" or "Movies, Movies4K, Action"
+      MOVIE_LIBRARY_NAME: "Movies"
+      
+      # Your TV show library name (comma-separated if multiple)
+      # Example: "TV Shows" or "TV Shows, Anime, Documentaries"
+      TV_LIBRARY_NAME: "TV Shows"
+      
+      # ============================================
+      # Behavior Configuration
+      # ============================================
+      
+      # Whether to actually remove items from watchlist
+      # true = remove items, false = dry-run (show what would be removed)
+      REMOVE_FROM_WATCHLIST: "true"
+      
+      # Whether to check movies
+      CHECK_MOVIES: "true"
+      
+      # Whether to check TV shows
+      CHECK_TV_SHOWS: "true"
+      
+      # ============================================
+      # Scheduler Configuration
+      # ============================================
+      
+      # Enable automatic scheduling (true/false)
+      # true = script runs continuously at intervals
+      # false = script runs once and exits
+      ENABLE_SCHEDULER: "true"
+      
+      # How often to run (in hours)
+      # Examples:
+      #   1   = every hour
+      #   6   = every 6 hours
+      #   24  = every day (recommended)
+      #   168 = every week
+      RUN_INTERVAL: "24"
+      
+      # ============================================
+      # Purge Options
+      # ============================================
+      
+      # Set to true to remove ALL items from watchlist
+      # Useful to completely clear a watchlist
+      # WARNING: This will remove everything regardless of watch status!
+      PURGE_ALL_WATCHLIST: "false"
+      
+      # ============================================
+      # User Configuration
+      # ============================================
+      
+      # Users to process (comma-separated)
+      # "Admin" = your admin account
+      # "User1, User2" = specific users
+      # You need credentials for non-admin users (see below)
+      USERS: "Admin"
+      
+      # User credentials for non-admin users (optional)
+      # Only needed if USERS includes anyone other than Admin
+      # Format: "User1:email@example.com:password|User2:email2@example.com:password2"
+      # Example: USER_CREDENTIALS: "John:john@plex.com:mypassword|Jane:jane@plex.com:herpassword"
+      # USER_CREDENTIALS: "User1:user1@example.com:password1|User2:user2@example.com:password2"
+
+    # ============================================
+    # Volume Mounting (Optional)
+    # ============================================
+    
+    # Uncomment below to mount a custom config.yml instead of using env vars
+    # volumes:
+    #   - ./config.yml:/app/config.yml
+    
+    # ============================================
+    # Logging Configuration (Optional)
+    # ============================================
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"      # Max log file size
+        max-file: "3"        # Keep 3 old log files
+
+# ============================================
+# Example Configurations
+# ============================================
+
+# Example 1: Basic Daily Cleanup
+# environment:
+#   PLEX_URL: "http://192.168.1.100:32400"
+#   PLEX_API_KEY: "abc123xyz"
+#   ENABLE_SCHEDULER: "true"
+#   RUN_INTERVAL: "24"
+
+# Example 2: Hourly Cleanup with Multiple Libraries
+# environment:
+#   PLEX_URL: "http://plex.example.com:32400"
+#   PLEX_API_KEY: "abc123xyz"
+#   MOVIE_LIBRARY_NAME: "Movies, Movies4K"
+#   TV_LIBRARY_NAME: "TV Shows, Anime"
+#   ENABLE_SCHEDULER: "true"
+#   RUN_INTERVAL: "1"
+
+# Example 3: Dry-Run (See What Would Be Removed)
+# environment:
+#   PLEX_URL: "http://localhost:32400"
+#   PLEX_API_KEY: "abc123xyz"
+#   REMOVE_FROM_WATCHLIST: "false"
+#   ENABLE_SCHEDULER: "false"
+
+# Example 4: Purge All Watchlist
+# environment:
+#   PLEX_URL: "http://localhost:32400"
+#   PLEX_API_KEY: "abc123xyz"
+#   PURGE_ALL_WATCHLIST: "true"
+#   ENABLE_SCHEDULER: "false"
+
+# Example 5: Multiple Users
+# environment:
+#   PLEX_URL: "http://localhost:32400"
+#   PLEX_API_KEY: "abc123xyz"
+#   USERS: "Admin,User1,User2"
+#   USER_CREDENTIALS: "User1:user1@example.com:pass123|User2:user2@example.com:pass456"
+#   ENABLE_SCHEDULER: "true"
+#   RUN_INTERVAL: "24"

@@ -1,10 +1,13 @@
 import yaml
+import time
+import os
 from plexapi.server import PlexServer
 from plexapi.myplex import MyPlexAccount
 from urllib.parse import urlparse
 from plexapi.exceptions import BadRequest, Unauthorized
+from apscheduler.schedulers.background import BackgroundScheduler
 
-Version: 1.2
+Version: 1.3
 
 def print_progress(current, total, prefix=""):
     percent = current / total * 100
@@ -28,6 +31,36 @@ def extract_tvdb_id(item):
         if parsed.scheme == 'tvdb':
             return int(parsed.netloc)
     return None
+
+def purge_watchlist(account, username="Admin"):
+    """
+    Remove all items from a user's watchlist
+    """
+    print(f"\nPurging entire watchlist for {username}...")
+    
+    try:
+        watchlist = list(account.watchlist())
+        if not watchlist:
+            print(f"Watchlist for {username} is already empty")
+            return 0
+        
+        total = len(watchlist)
+        print(f"Found {total} items in {username}'s watchlist. Removing all...")
+        
+        removed_count = 0
+        for index, item in enumerate(watchlist, 1):
+            try:
+                account.removeFromWatchlist(item)
+                removed_count += 1
+            except BadRequest as e:
+                print(f"\n  ⚠️  Skipping: {item.title} was already removed from {username}'s watchlist")
+            print_progress(index, total, f"Removing from {username}'s watchlist")
+        print()
+        
+        return removed_count
+    except Exception as e:
+        print(f"Error purging watchlist for {username}: {str(e)}")
+        return 0
 
 def process_user_watchlist(account, plex, config, username="Admin"):
     # Initialize lists
@@ -209,98 +242,173 @@ def main():
     plex = PlexServer(config['plex_url'], config['plex_api_key'])
     admin_account = MyPlexAccount(token=config['plex_api_key'])
     
-    # Initialize counters
-    total_movies_removed = 0
-    total_shows_removed = 0
+    # Get configuration options
+    enable_purge = config.get('purge_all_watchlist', False)
+    run_interval = config.get('run_interval', 0)  # in hours, 0 = run once
+    enable_scheduler = config.get('enable_scheduler', False)
     
-    # Process users if specified in config
-    if 'users' in config:
-        # Parse the comma-separated list of users
-        if isinstance(config['users'], str):
-            # Split by comma and strip whitespace from each username
-            users = [username.strip() for username in config['users'].split(',')]
-        elif isinstance(config['users'], list):
-            # If it's already a list, use it directly
-            users = config['users']
-        else:
-            # Default to empty list if invalid format
-            users = []
-            print("⚠️  Invalid format for 'users' in config. Expected string or list.")
+    def run_cleanup():
+        """Run the cleanup process"""
+        # Initialize counters
+        total_movies_removed = 0
+        total_shows_removed = 0
+        total_purged = 0
         
-        # Get all users from the admin account
-        try:
-            all_plex_users = admin_account.users()
-        except Exception as e:
-            print(f"Error getting Plex users: {str(e)}")
-            all_plex_users = []
-        
-        # Process each user specified in the config
-        for username in users:
+        # Handle purge_all_watchlist if enabled
+        if enable_purge:
             print(f"\n{'='*50}")
-            print(f"Processing {username}'s watchlist...")
+            print("PURGING ALL WATCHLIST MODE ENABLED")
+            print(f"{'='*50}")
             
-            # Check if this is Admin
-            if username == "Admin":
-                print("Processing Admin account...")
+            if 'users' in config:
+                if isinstance(config['users'], str):
+                    users = [username.strip() for username in config['users'].split(',')]
+                elif isinstance(config['users'], list):
+                    users = config['users']
+                else:
+                    users = []
+            
+                try:
+                    all_plex_users = admin_account.users()
+                except Exception as e:
+                    print(f"Error getting Plex users: {str(e)}")
+                    all_plex_users = []
+                
+                for username in users:
+                    if username == "Admin":
+                        purged = purge_watchlist(admin_account, "Admin")
+                        total_purged += purged
+                        continue
+                    
+                    if config.get('user_credentials', {}).get(username, {}):
+                        user_credentials = config.get('user_credentials', {}).get(username, {})
+                        if user_credentials.get('username') and user_credentials.get('password'):
+                            try:
+                                user_account = MyPlexAccount(
+                                    username=user_credentials.get('username'),
+                                    password=user_credentials.get('password')
+                                )
+                                purged = purge_watchlist(user_account, username)
+                                total_purged += purged
+                            except Exception as e:
+                                print(f"Error purging watchlist for {username}: {str(e)}")
+            else:
+                purged = purge_watchlist(admin_account, "Admin")
+                total_purged += purged
+            
+            print(f"\nTotal items purged: {total_purged}")
+        else:
+            # Normal cleanup process
+            # Process users if specified in config
+            if 'users' in config:
+                # Parse the comma-separated list of users
+                if isinstance(config['users'], str):
+                    # Split by comma and strip whitespace from each username
+                    users = [username.strip() for username in config['users'].split(',')]
+                elif isinstance(config['users'], list):
+                    # If it's already a list, use it directly
+                    users = config['users']
+                else:
+                    # Default to empty list if invalid format
+                    users = []
+                    print("⚠️  Invalid format for 'users' in config. Expected string or list.")
+                
+                # Get all users from the admin account
+                try:
+                    all_plex_users = admin_account.users()
+                except Exception as e:
+                    print(f"Error getting Plex users: {str(e)}")
+                    all_plex_users = []
+                
+                # Process each user specified in the config
+                for username in users:
+                    print(f"\n{'='*50}")
+                    print(f"Processing {username}'s watchlist...")
+                    
+                    # Check if this is Admin
+                    if username == "Admin":
+                        print("Processing Admin account...")
+                        admin_movies, admin_shows = process_user_watchlist(admin_account, plex, config, "Admin")
+                        total_movies_removed += admin_movies
+                        total_shows_removed += admin_shows
+                        continue
+                    
+                    # Check if this is a home/managed user
+                    home_user = next((user for user in all_plex_users if user.home and user.title == username), None)
+                    
+                    try:
+                        # Check if we have credentials for this user
+                        if config.get('user_credentials', {}).get(username, {}):
+                            user_credentials = config.get('user_credentials', {}).get(username, {})
+                            if user_credentials.get('username') and user_credentials.get('password'):
+                                try:
+                                    # Authenticate with provided credentials
+                                    user_account = MyPlexAccount(
+                                        username=user_credentials.get('username'),
+                                        password=user_credentials.get('password')
+                                    )
+                                    print(f"  Authenticated as {username} using credentials")
+                                    
+                                    # Process this user's watchlist
+                                    user_movies, user_shows = process_user_watchlist(
+                                        user_account, plex, config, username
+                                    )
+                                    
+                                    total_movies_removed += user_movies
+                                    total_shows_removed += user_shows
+                                except Unauthorized:
+                                    print(f"  ⚠️  Authentication failed for {username}: Incorrect credentials")
+                                    print(f"  Skipping {username}")
+                                    continue
+                                except Exception as e:
+                                    print(f"  ⚠️  Error authenticating {username}: {str(e)}")
+                                    print(f"  Skipping {username}")
+                                    continue
+                            else:
+                                print(f"  ⚠️  Incomplete credentials for {username}")
+                                print(f"  Skipping {username}")
+                                continue
+                        else:
+                            print(f"  ⚠️  No credentials provided for {username}")
+                            print(f"  Skipping {username}")
+                            continue
+                            
+                    except Exception as e:
+                        print(f"Error processing {username}: {str(e)}")
+                    print(f"{'='*50}")
+            else:
+                # If no users specified, just process Admin
+                print("No users specified in config, processing Admin account only...")
                 admin_movies, admin_shows = process_user_watchlist(admin_account, plex, config, "Admin")
                 total_movies_removed += admin_movies
                 total_shows_removed += admin_shows
-                continue
             
-            # Check if this is a home/managed user
-            home_user = next((user for user in all_plex_users if user.home and user.title == username), None)
-            
-            try:
-                # Check if we have credentials for this user
-                if config.get('user_credentials', {}).get(username, {}):
-                    user_credentials = config.get('user_credentials', {}).get(username, {})
-                    if user_credentials.get('username') and user_credentials.get('password'):
-                        try:
-                            # Authenticate with provided credentials
-                            user_account = MyPlexAccount(
-                                username=user_credentials.get('username'),
-                                password=user_credentials.get('password')
-                            )
-                            print(f"  Authenticated as {username} using credentials")
-                            
-                            # Process this user's watchlist
-                            user_movies, user_shows = process_user_watchlist(
-                                user_account, plex, config, username
-                            )
-                            
-                            total_movies_removed += user_movies
-                            total_shows_removed += user_shows
-                        except Unauthorized:
-                            print(f"  ⚠️  Authentication failed for {username}: Incorrect credentials")
-                            print(f"  Skipping {username}")
-                            continue
-                        except Exception as e:
-                            print(f"  ⚠️  Error authenticating {username}: {str(e)}")
-                            print(f"  Skipping {username}")
-                            continue
-                    else:
-                        print(f"  ⚠️  Incomplete credentials for {username}")
-                        print(f"  Skipping {username}")
-                        continue
-                else:
-                    print(f"  ⚠️  No credentials provided for {username}")
-                    print(f"  Skipping {username}")
-                    continue
-                    
-            except Exception as e:
-                print(f"Error processing {username}: {str(e)}")
-            print(f"{'='*50}")
-    else:
-        # If no users specified, just process Admin
-        print("No users specified in config, processing Admin account only...")
-        admin_movies, admin_shows = process_user_watchlist(admin_account, plex, config, "Admin")
-        total_movies_removed += admin_movies
-        total_shows_removed += admin_shows
+            # Summary
+            print("\nSummary:")
+            print(f"Total movies removed from watchlists: {total_movies_removed}")
+            print(f"Total TV shows removed from watchlists: {total_shows_removed}")
     
-    # Summary
-    print("\nSummary:")
-    print(f"Total movies removed from watchlists: {total_movies_removed}")
-    print(f"Total TV shows removed from watchlists: {total_shows_removed}")
+    # Check if scheduler should be enabled
+    if enable_scheduler and run_interval > 0:
+        print(f"\n{'='*50}")
+        print(f"Scheduler enabled - running every {run_interval} hour(s)")
+        print(f"{'='*50}\n")
+        
+        scheduler = BackgroundScheduler()
+        scheduler.add_job(run_cleanup, 'interval', hours=run_interval)
+        scheduler.start()
+        
+        print("Scheduler started. Press Ctrl+C to stop...")
+        try:
+            while True:
+                time.sleep(1)
+        except KeyboardInterrupt:
+            print("\nShutting down scheduler...")
+            scheduler.shutdown()
+            print("Scheduler stopped.")
+    else:
+        # Run cleanup once
+        run_cleanup()
 
 if __name__ == '__main__':
     main()

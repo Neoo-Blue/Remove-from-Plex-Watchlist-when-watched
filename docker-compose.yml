@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  plex-watchlist-cleanup:
+    build: .
+    container_name: plex-watchlist-cleanup
+    restart: unless-stopped
+    environment:
+      # Plex Server Configuration
+      PLEX_URL: "http://plex:32400"  # Change to your Plex server address
+      PLEX_API_KEY: "${PLEX_API_KEY}"  # Your Plex API token
+      
+      # Library Configuration
+      MOVIE_LIBRARY_NAME: "Movies"
+      TV_LIBRARY_NAME: "TV Shows"
+      
+      # Behavior Configuration
+      REMOVE_FROM_WATCHLIST: "true"
+      CHECK_MOVIES: "true"
+      CHECK_TV_SHOWS: "true"
+      
+      # Scheduler Configuration
+      ENABLE_SCHEDULER: "true"
+      RUN_INTERVAL: "24"  # Run every 24 hours
+      PURGE_ALL_WATCHLIST: "false"  # Set to true to purge entire watchlist
+      
+      # Users to process (comma-separated)
+      USERS: "Admin"
+      
+      # User Credentials (format: "User1:email|password|User2:email|password")
+      # Only needed if processing non-admin users
+      # USER_CREDENTIALS: "User1:user1@example.com:password1|User2:user2@example.com:password2"
+
+    # Uncomment to mount a custom config file instead of using environment variables
+    # volumes:
+    #   - ./config.yml:/app/config.yml
+    
+    # Optional: Add logging
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

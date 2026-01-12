@@ -6,6 +6,11 @@ remove_from_watchlist: true  # Set to true to enable removal
 check_movies: true
 check_tv_shows: true
 
+# Scheduler options
+enable_scheduler: false  # Set to true to enable continuous scheduling
+run_interval: 24  # Run interval in hours (e.g., 24 = every 24 hours)
+purge_all_watchlist: false  # Set to true to remove ALL items from watchlist (ignores watched status)
+
 users: Admin, User1, User2
 
 user_credentials:

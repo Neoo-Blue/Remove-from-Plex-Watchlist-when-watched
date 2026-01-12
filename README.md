@@ -12,6 +12,9 @@ Keep your watchlist clean and focused on content you haven't seen yet!
 - 👥 **User Selection**: Manage watchlist for any user (requires login credentials)
 - 🔎 **Finds and lists**: Retrieves your watchlist and lists movies and/or TV Shows you've already watched
 - 🧹 **Watchlist Cleanup**: Removes watched content from Plex Watchlist
+- 🗑️ **Purge Mode**: Option to remove ALL items from watchlist at once
+- ⏰ **Scheduled Runs**: Configure to run automatically at set intervals
+- 🐳 **Docker Support**: Fully containerized with docker-compose configuration
 - ℹ️ **Dry run**: `remove_from_watchlist` flag for dry-run or actual removal
 
 ---
@@ -51,7 +54,10 @@ Rename `config.example.yml` to `config.yml` and update where necessary:
 ### Options
 `remove_from_watchlist:` Set to `true` to enable removal. `false` for dry-run listing only  </br>
 `check_movies:` whether or not to check movies </br>
-`check_tv_shows:` whether or not to check TV Shows
+`check_tv_shows:` whether or not to check TV Shows </br>
+`enable_scheduler:` Set to `true` to run automatically at intervals </br>
+`run_interval:` How often to run in hours (e.g., `24` = every 24 hours) </br>
+`purge_all_watchlist:` Set to `true` to remove ALL items from watchlist (ignores watched status)
 
 ### Users
 > [!IMPORTANT]
@@ -62,12 +68,108 @@ Rename `config.example.yml` to `config.yml` and update where necessary:
 
 ---
 
-## 🚀 Usage
+## � Docker / Docker Compose (Recommended)
+
+The easiest way to run this script is using Docker, which handles all dependencies automatically. Everything can be configured through environment variables without touching any files.
+
+### Quick Start with Docker Compose
+
+1. **Clone the repository:**
+```sh
+git clone https://github.com/netplexflix/Remove-from-Plex-Watchlist-when-watched.git
+cd Remove-from-Plex-Watchlist-when-watched
+```
+
+2. **Update `docker-compose.yml` with your settings:**
+
+Edit the `environment` section in `docker-compose.yml`:
+
+```yaml
+environment:
+  PLEX_URL: "http://plex:32400"  # Your Plex server address
+  PLEX_API_KEY: "your-plex-token-here"
+  MOVIE_LIBRARY_NAME: "Movies"
+  TV_LIBRARY_NAME: "TV Shows"
+  REMOVE_FROM_WATCHLIST: "true"
+  CHECK_MOVIES: "true"
+  CHECK_TV_SHOWS: "true"
+  ENABLE_SCHEDULER: "true"  # Enable automatic runs
+  RUN_INTERVAL: "24"  # Run every 24 hours
+  PURGE_ALL_WATCHLIST: "false"  # Set to true to clear entire watchlist
+  USERS: "Admin"
+```
+
+3. **Run with Docker Compose:**
+
+```sh
+docker-compose up -d
+```
+
+The container will run automatically and keep running in the background. View logs with:
+```sh
+docker-compose logs -f plex-watchlist-cleanup
+```
+
+4. **Stop the container:**
+```sh
+docker-compose down
+```
+
+### Docker Compose with Multiple Users
+
+If you want to process multiple users with credentials, add them via the `USER_CREDENTIALS` environment variable. Format is pipe-separated user definitions with colon-separated email and password:
+
+```yaml
+environment:
+  USERS: "Admin,User1,User2"
+  USER_CREDENTIALS: "User1:user1@example.com:password1|User2:user2@example.com:password2"
+```
+
+### Alternative: Mount Config File
+
+Instead of using environment variables, you can mount your own `config.yml` file:
+
+```yaml
+volumes:
+  - ./config.yml:/app/config.yml
+```
+
+---
+
+## 🚀 Usage (Traditional)
 
 Run the script with:
 ```sh
 python RFPW.py
 ```
+
+The script will run once and clean up the specified users' watchlists based on your configuration.
+
+### Scheduled/Continuous Runs
+
+To have the script run automatically at intervals, update your `config.yml`:
+
+```yaml
+enable_scheduler: true
+run_interval: 24  # Run every 24 hours
+```
+
+Then run:
+```sh
+python RFPW.py
+```
+
+The script will stay running and execute your cleanup routine every 24 hours. Press `Ctrl+C` to stop.
+
+### Purge All Watchlist
+
+To remove **ALL** items from a user's watchlist (regardless of watch status), set:
+
+```yaml
+purge_all_watchlist: true
+```
+
+This is useful if you want to completely clear the watchlist without checking what's been watched.
 
 > [!TIP]
 > Windows users can create a batch file for quick launching:
